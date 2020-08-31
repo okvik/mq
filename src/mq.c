@@ -105,6 +105,7 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 err:
 	free(mq->pipes);
 	pipeclose(mq->order);
+	if(d) closefile(d);
 	if(ctl) closefile(ctl);
 	if(order) closefile(order);
 	return nil;
