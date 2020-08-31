@@ -176,55 +176,6 @@ pipecreate(File *parent, char *name, char *uid, ulong perm)
 	return f;
 }
 
-void
-xcreate(Req *r)
-{
-	char *name = r->ifcall.name;
-	char *uid = r->fid->uid;
-	ulong perm = r->ifcall.perm;
-	File *parent = r->fid->file;
-	File *f = nil;
-
-	switch(filetype(parent)){
-	case Qroot:
-		if(!(perm&DMDIR)){
-			respond(r, "forbidden");
-			return;
-		}
-		/* fallthrough */
-	case Qmq:
-		if(perm&DMDIR)
-			f = mqcreate(parent, name, uid, perm);
-		else
-			f = pipecreate(parent, name, uid, perm);
-		break;
-	}
-	if(f == nil)
-		responderror(r);
-	else
-		respond(r, nil);
-}
-
-void
-xopen(Req *r)
-{
-	File *f = r->fid->file;
-
-	switch(filetype(f)){
-	case Qpipe:
-	case Qorder: {
-		Pipe *p = f->aux;
-		Client *c;
-
-		c = r->fid->aux = emalloc(sizeof(Client));
-		if(p->group->replay)
-			c->cursor = (Write*)p->history;
-		else
-			c->cursor = (Write*)p->history->tail;
-		break;
-	}}
-	respond(r, nil);
-}
 
 void
 respondread(Req *r, Write *w)
@@ -376,6 +327,56 @@ ctlwrite(Req *r)
 }
 
 void
+xcreate(Req *r)
+{
+	char *name = r->ifcall.name;
+	char *uid = r->fid->uid;
+	ulong perm = r->ifcall.perm;
+	File *parent = r->fid->file;
+	File *f = nil;
+
+	switch(filetype(parent)){
+	case Qroot:
+		if(!(perm&DMDIR)){
+			respond(r, "forbidden");
+			return;
+		}
+		/* fallthrough */
+	case Qmq:
+		if(perm&DMDIR)
+			f = mqcreate(parent, name, uid, perm);
+		else
+			f = pipecreate(parent, name, uid, perm);
+		break;
+	}
+	if(f == nil)
+		responderror(r);
+	else
+		respond(r, nil);
+}
+
+void
+xopen(Req *r)
+{
+	File *f = r->fid->file;
+
+	switch(filetype(f)){
+	case Qpipe:
+	case Qorder: {
+		Pipe *p = f->aux;
+		Client *c;
+
+		c = r->fid->aux = emalloc(sizeof(Client));
+		if(p->group->replay)
+			c->cursor = (Write*)p->history;
+		else
+			c->cursor = (Write*)p->history->tail;
+		break;
+	}}
+	respond(r, nil);
+}
+
+void
 xwrite(Req *r)
 {
 	File *f = r->fid->file;
@@ -457,8 +458,8 @@ xdestroyfile(File *f)
 Srv fs = {
 	.create = xcreate,
 	.open = xopen,
-	.read = xread,
 	.write = xwrite,
+	.read = xread,
 	.flush = xflush,
 	.destroyfid = xdestroyfid,
 };
