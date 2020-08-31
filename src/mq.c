@@ -167,11 +167,11 @@ pipecreate(File *parent, char *name, char *uid, ulong perm)
 
 	mq = parent->aux;
 	p = pipealloc(mq);
-	listlink(mq->pipes, p);
 	if((f = createfile(parent, name, uid, perm, p)) == nil){
 		pipeclose(p);
 		return nil;
 	}
+	listlink(mq->pipes, p);
 	filesettype(f, Qpipe);
 	return f;
 }
