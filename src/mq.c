@@ -12,7 +12,6 @@ typedef struct Mq Mq;
 typedef struct Pipe Pipe;
 typedef struct Write Write;
 typedef struct Read Read;
-typedef struct Order Order;
 
 struct Client {
 	Write *cursor; /* reader position */
@@ -136,8 +135,6 @@ pipeclose(Pipe *p)
 {
 	Read *r;
 	Write *w;
-
-	print("pipeclose\n");
 
 	listunlink(p);
 	if(p->reads)
