@@ -7,31 +7,37 @@
 #include "list.h"
 #include "util.h"
 
-typedef struct Client Client;
 typedef struct Mq Mq;
-typedef struct Pipe Pipe;
-typedef struct Write Write;
+typedef struct Stream Stream;
+typedef struct Client Client;
 typedef struct Read Read;
-
-struct Client {
-	Write *cursor; /* reader position */
-};
+typedef struct Write Write;
 
 struct Mq {
-	Pipe *pipes;
-	Pipe *order;
+	Stream *group;
+	Stream *order;
 
 	/* configuration */
 	int replay;
 };
 
-struct Pipe {
+struct Stream {
 	List;
 
-	Mq *group; /* membership */
+	Mq *mq; /* parent */
 
-	Write *history; /* stored messages */
+	Write *queue; /* stored messages */
 	Read *reads; /* readers queue */
+};
+
+struct Client {
+	Write *cursor; /* reader position */
+};
+
+struct Read {
+	List;
+
+	Req *r;
 };
 
 struct Write {
@@ -43,16 +49,10 @@ struct Write {
 	uchar *data;
 };
 
-struct Read {
-	List;
-
-	Req *r;
-};
-
 enum {
 	Qroot,
 		Qmq,
-			Qpipe,
+			Qstream,
 			Qorder,
 			Qctl,
 };
@@ -76,14 +76,14 @@ filetype(File *f)
 File*
 mqcreate(File *parent, char *name, char *uid, ulong perm)
 {
-	Pipe *pipealloc(Mq*);
-	void *pipeclose(Pipe*);
+	Stream *streamalloc(Mq*);
+	void *streamclose(Stream*);
 	File *d, *ctl, *order;
 	Mq *mq;
 
 	mq = emalloc(sizeof(Mq));
-	mq->pipes = (Pipe*)listalloc();
-	mq->order = (Pipe*)pipealloc(mq);
+	mq->group = (Stream*)listalloc();
+	mq->order = (Stream*)streamalloc(mq);
 	mq->replay = 0;
 
 	ctl = order = nil;
@@ -103,8 +103,8 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 
 	return d;
 err:
-	free(mq->pipes);
-	pipeclose(mq->order);
+	free(mq->group);
+	streamclose(mq->order);
 	if(d) closefile(d);
 	if(ctl) closefile(ctl);
 	if(order) closefile(order);
@@ -119,63 +119,62 @@ mqclose(File *f)
 	free(mq);
 }
 
-Pipe*
-pipealloc(Mq *mq)
+Stream*
+streamalloc(Mq *mq)
 {
-	Pipe *p;
+	Stream *s;
 	
-	p = emalloc(sizeof(Pipe));
-	p->group = mq;
-	p->history = (Write*)listalloc();
-	p->reads = (Read*)listalloc();
-	return p;
+	s = emalloc(sizeof(Stream));
+	s->mq = mq;
+	s->queue = (Write*)listalloc();
+	s->reads = (Read*)listalloc();
+	return s;
 }
 
 void
-pipeclose(Pipe *p)
+streamclose(Stream *s)
 {
 	Read *r;
 	Write *w;
 
-	listunlink(p);
-	if(p->reads)
-	foreach(Read*, p->reads){
+	listunlink(s);
+	if(s->reads)
+	foreach(Read*, s->reads){
 		/* eof these? */
 		r = ptr;
 		ptr = (Read*)r->tail;
 		listunlink(r);
 		free(r);
 	}
-	free(p->reads);
-	if(p->history)
-	foreach(Write*, p->history){
+	free(s->reads);
+	if(s->queue)
+	foreach(Write*, s->queue){
 		w = ptr;
 		ptr = (Write*)w->tail;
 		listunlink(w);
 		free(w);
 	}
-	free(p->history);
-	free(p);
+	free(s->queue);
+	free(s);
 }
 
 File*
-pipecreate(File *parent, char *name, char *uid, ulong perm)
+streamcreate(File *parent, char *name, char *uid, ulong perm)
 {
 	File *f;
 	Mq *mq;
-	Pipe *p;
+	Stream *s;
 
 	mq = parent->aux;
-	p = pipealloc(mq);
-	if((f = createfile(parent, name, uid, perm, p)) == nil){
-		pipeclose(p);
+	s = streamalloc(mq);
+	if((f = createfile(parent, name, uid, perm, s)) == nil){
+		streamclose(s);
 		return nil;
 	}
-	listlink(mq->pipes, p);
-	filesettype(f, Qpipe);
+	listlink(mq->group, s);
+	filesettype(f, Qstream);
 	return f;
 }
-
 
 void
 respondread(Req *r, Write *w)
@@ -186,19 +185,19 @@ respondread(Req *r, Write *w)
 }
 
 void
-piperead(Req *r)
+streamread(Req *r)
 {
 	File *f = r->fid->file;
-	Pipe *p = f->aux;
+	Stream *s = f->aux;
 	Client *c = r->fid->aux;
 	Read *rd;
 
-	/* Delay the response if there's no history
+	/* Delay the response if the queue is empty
 	 * or if we've already caught up. */
-	if(listempty(p->history) || listend(c->cursor)){
+	if(listempty(s->queue) || listend(c->cursor)){
 		rd = emalloc(sizeof(Read));
 		rd->r = r;
-		listlink(p->reads, rd);
+		listlink(s->reads, rd);
 		return;
 	}
 	c->cursor = (Write*)c->cursor->link;
@@ -219,17 +218,17 @@ void
 pipewrite(Req *r)
 {
 	File *f = r->fid->file;
-	Pipe *p = f->aux;
-	Mq *mq = p->group;
+	Stream *s = f->aux;
+	Mq *mq = s->mq;
 	Write *w, *o;
 	long n;
 
-	/* Commit to history */
+	/* Commit to queue */
 	w = writealloc(r->ifcall.count);
 	w->count = r->ifcall.count;
 	w->offset = r->ifcall.offset;
 	memmove(w->data, r->ifcall.data, w->count);
-	listlink(p->history->tail, w);
+	listlink(s->queue->tail, w);
 
 	/* Commit to order */
 	n = strlen(f->name)+1;
@@ -237,10 +236,10 @@ pipewrite(Req *r)
 	o->offset = 0;
 	o->count = n;
 	memmove(o->data, f->name, n);
-	listlink(mq->order->history->tail, o);
+	listlink(mq->order->queue->tail, o);
 
-	/* Kick the blocked pipe readers */
-	foreach(Read*, p->reads){
+	/* Kick the blocked stream readers */
+	foreach(Read*, s->reads){
 		Client *c = ptr->r->fid->aux;
 
 		respondread(ptr->r, w);
@@ -346,7 +345,7 @@ xcreate(Req *r)
 		if(perm&DMDIR)
 			f = mqcreate(parent, name, uid, perm);
 		else
-			f = pipecreate(parent, name, uid, perm);
+			f = streamcreate(parent, name, uid, perm);
 		break;
 	}
 	if(f == nil)
@@ -361,16 +360,16 @@ xopen(Req *r)
 	File *f = r->fid->file;
 
 	switch(filetype(f)){
-	case Qpipe:
+	case Qstream:
 	case Qorder: {
-		Pipe *p = f->aux;
+		Stream *s = f->aux;
 		Client *c;
 
 		c = r->fid->aux = emalloc(sizeof(Client));
-		if(p->group->replay)
-			c->cursor = (Write*)p->history;
+		if(s->mq->replay)
+			c->cursor = (Write*)s->queue;
 		else
-			c->cursor = (Write*)p->history->tail;
+			c->cursor = (Write*)s->queue->tail;
 		break;
 	}}
 	respond(r, nil);
@@ -382,7 +381,7 @@ xwrite(Req *r)
 	File *f = r->fid->file;
 
 	switch(filetype(f)){
-	case Qpipe:
+	case Qstream:
 		pipewrite(r);
 		break;
 	case Qctl:
@@ -400,9 +399,9 @@ xread(Req *r)
 	File *f = r->fid->file;
 
 	switch(filetype(f)){
-	case Qpipe:
+	case Qstream:
 	case Qorder:
-		piperead(r);
+		streamread(r);
 		break;
 	default:
 		respond(r, "forbidden");
@@ -416,13 +415,13 @@ xflush(Req *r)
 	File *f = old->fid->file;
 
 	switch(filetype(f)){
-	case Qpipe:
+	case Qstream:
 	case Qorder: {
-		Pipe *p = f->aux;
+		Stream *s = f->aux;
 
 		if(old->ifcall.type != Tread)
 			break;
-		foreach(Read*, p->reads){
+		foreach(Read*, s->reads){
 			if(ptr->r == old){
 				free(listunlink(ptr));
 				break;
@@ -448,8 +447,8 @@ xdestroyfile(File *f)
 	case Qmq:
 		mqclose(f);
 		break;
-	case Qpipe:
-		pipeclose(f->aux);
+	case Qstream:
+		streamclose(f->aux);
 		break;
 	}
 	return;

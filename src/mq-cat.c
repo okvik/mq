@@ -3,15 +3,15 @@
 
 #include "util.h"
 
-typedef struct Pipe Pipe;
+typedef struct Stream Stream;
 
-struct Pipe {
+struct Stream {
 	char *name;
 	int fd;
 };
 
-int npipes;
-Pipe *pipes;
+int nstreams;
+Stream *streams;
 
 char buf[8192];
 
@@ -37,7 +37,7 @@ openmq(char *name)
 {
 	int mqfd, n, ismq;
 	Dir *dirs, *d;
-	Pipe *p;
+	Stream *s;
 
 	mqfd = eopen(name, OREAD);
 	if((n = dirreadall(mqfd, &dirs)) == -1)
@@ -47,17 +47,17 @@ openmq(char *name)
 	close(mqfd);
 
 	ismq = 0;
-	npipes = n - 2;
-	pipes = p = emalloc(npipes*sizeof(Pipe));
+	nstreams = n - 2;
+	streams = s = emalloc(nstreams*sizeof(Stream));
 	for(d = dirs; n--; d++){
 		if(strncmp(d->name, "ctl", 3) == 0
 		|| strncmp(d->name, "order", 5) == 0){
 			ismq++;
 			continue;
 		}
-		p->name = estrdup(d->name);
-		p->fd = eopen(d->name, OREAD);
-		p++;
+		s->name = estrdup(d->name);
+		s->fd = eopen(d->name, OREAD);
+		s++;
 	}
 	free(dirs);
 	if(ismq != 2)
@@ -84,7 +84,7 @@ main(int argc, char *argv[])
 {
 	int orderfd, n, i;
 	char name[512+1];
-	Pipe *p;
+	Stream *s;
 
 	ARGBEGIN{
 	default: usage();
@@ -99,11 +99,11 @@ main(int argc, char *argv[])
 		if((n = read(orderfd, name, sizeof(name)-1)) == 0)
 			break;
 		buf[n] = 0;
-		for(i = 0, p = pipes; i < npipes; i++, p++)
-			if(strcmp(p->name, name) == 0)
-			if(p->fd != -1){
-				if(rdwr(p->fd, 1) == 0)
-					p->fd = -1;
+		for(i = 0, s = streams; i < nstreams; i++, s++)
+			if(strcmp(s->name, name) == 0)
+			if(s->fd != -1){
+				if(rdwr(s->fd, 1) == 0)
+					s->fd = -1;
 				break;
 			}
 	}
