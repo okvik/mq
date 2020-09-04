@@ -1,7 +1,6 @@
 TODO
 ====
 
-* README
 * Manual pages
 * Implement Twstat
 * Configuration management
