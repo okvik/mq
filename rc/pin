@@ -1,0 +1,46 @@
+#!/bin/rc -e
+rfork ens
+
+flagfmt = 'n:noattach, w:write, m:mtpt mtpt'
+args = 'name [command]'
+eval `''{aux/getflags $*} || exec aux/usage
+
+srv = pin-$user
+name = $1
+if(~ $#name 0)
+	exec aux/usage
+cmd = $*(2-)
+if(~ $#cmd 0){
+	nocmd = 1
+	cmd = (rc -i)
+}
+if(~ $#mtpt 0)
+	mtpt = /n/pin
+
+# Check if already mounted
+if(! ~ `{walk -n0 -eq $mtpt} a000000000000000.0.80){
+	if(test -e /srv/$srv)
+		mount -c /srv/$srv $mtpt
+	if not
+		mq -s $srv -m $mtpt
+}
+
+mq = $mtpt/$name
+if(~ $#write 1){
+	if(~ $nocmd 1)
+		exec cat >>$mq/0
+	if not
+		exec echo $cmd >>$mq/0
+}
+if(! test -d $mq){
+	echo creating $mq >[1=2]
+	mkdir -p $mq
+	echo replay on >$mq/ctl
+	touch $mq/^(0 1 2)
+	$cmd <$mq/0 >>$mq/1 >>[2]$mq/2 &
+}
+if(~ $#noattach 1)
+	exit
+echo attaching $mq >[1=2]
+mq-cat $mq &
+exec cat >>$mq/0

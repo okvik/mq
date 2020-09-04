@@ -1,0 +1,91 @@
+.TH PIN 1
+.SH NAME
+pin \- pinned I/O shell
+.SH SYNOPSIS
+pin
+[
+.B -ns
+] [
+.B -m
+.I mtpt
+] [
+.I name
+] [
+.I command
+]
+.SH DESCRIPTION
+.PP
+.B Pin
+manages persistent sessions for long-running commands.
+It is used to create, join, and control sessions for programs
+connected to a named
+.IR mq (4)
+stream group.
+.PP
+If a session
+.I name
+exists, then
+.B pin mysession
+will join the named session,
+otherwise a new session will be created.
+The command run in the session is
+.IR command ,
+or
+.B rc -i
+if command is not given.
+.PP
+The
+.B -n
+flag supresses joining of existing session.
+.PP
+The -w
+flag writes the
+.I command
+string, or standard input if not given, to
+the input stream of an existing session.
+.PP
+Under the hood,
+.I pin
+expects an
+.IR mq (4)
+instance mounted on
+.BR /n/pin ,
+or to
+.I mtpt
+if the
+.B -m
+option is given.
+If no such mount is present,
+.I pin
+mounts the channel posted on
+.BR /srv/pin-$user ,
+creating it if needed.
+.SH EXAMPLES
+.PP
+Pin an
+.BR rc (1)
+shell, or join an already existing session:
+.EX
+	pin myshell
+.EE
+.PP
+Pin some other program:
+.EX
+	pin remote rcpu -h remote
+.EE
+.PP
+Send input to a pinned program:
+.EX
+	pin -s myshell echo 'hi, shell'
+.EE
+or:
+.EX
+	echo 'echo hi, shell' | pin -s myshell
+.EE
+.SH SEE ALSO
+.IR mq (4)
+.SH SOURCE
+.EX
+git://src.a-b.xyz/mq
+.EE
+.SH BUGS
