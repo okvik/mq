@@ -49,10 +49,10 @@ Under the hood,
 expects an
 .IR mq (4)
 instance mounted on
-.BR /n/pin ,
-or to
+.BR /n/pin
+or
 .I mtpt
-if the
+in case the
 .B -m
 option is given.
 If no such mount is present,
