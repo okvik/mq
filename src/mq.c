@@ -50,8 +50,9 @@ struct Write {
 };
 
 enum {
-	Qroot,
-		Qmq,
+	/* Dirty trick to help clients tell us from most others. */
+	Qroot = 0xA,
+		Qmq = 0x1,
 			Qstream,
 			Qorder,
 			Qctl,
