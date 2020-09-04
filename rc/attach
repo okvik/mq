@@ -1,9 +1,0 @@
-#!/bin/rc -e
-rfork e
-flagfmt = ''; args = 'name'
-eval `''{aux/getflags $*} || exec aux/usage
-if(! ~ $#* 1) exec aux/usage
-
-mq = $1
-mq-cat $mq &
-exec cat >>$mq/0
