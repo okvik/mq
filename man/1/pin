@@ -4,7 +4,7 @@ pin \- pinned I/O shell
 .SH SYNOPSIS
 pin
 [
-.B -ns
+.B -nw
 ] [
 .B -m
 .I mtpt
@@ -76,11 +76,11 @@ Pin some other program:
 .PP
 Send input to a pinned program:
 .EX
-	pin -s myshell echo 'hi, shell'
+	pin -w myshell echo 'hi, shell'
 .EE
 or:
 .EX
-	echo 'echo hi, shell' | pin -s myshell
+	echo 'echo hi, shell' | pin -w myshell
 .EE
 .SH SEE ALSO
 .IR mq (4)
