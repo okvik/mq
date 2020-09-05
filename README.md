@@ -24,19 +24,19 @@ Many aspects of stream behaviour may be chosen at group creation
 time to suit different kinds of applications.
 
 * Reading
-	* message mode; preserve message boundaries (default)
-	* stream mode; coalesce messages (not implemented)
-	* (?) static mode; file-like, seekable, eof (not implemented)
+    * message mode; preserve message boundaries (default)
+    * stream mode; coalesce messages (not implemented)
+    * (?) static mode; file-like, seekable, eof (not implemented)
 * Writing
-	* non-blocking
-	* blocking; wait one reader, wait all readers (not implemented)
+    * non-blocking
+    * blocking; wait one reader, wait all readers (not implemented)
 * History replay
-	* no replay (default)
-	* most recent (not implemented)
-	* entire history
+    * no replay (default)
+    * most recent (not implemented)
+    * entire history
 * Queue persistence
-	* in-memory (default)
-	* (?) on disk (not implemented)
+    * in-memory (default)
+    * (?) on disk (not implemented)
 
 Caveats
 ----
