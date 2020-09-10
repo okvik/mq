@@ -1,0 +1,199 @@
+.TH MQ 4
+.SH NAME
+mq \- message queue
+.SH SYNOPSIS
+.B mq
+[
+-D
+] [
+.B -s
+.I name
+] [
+.B -m
+.I mtpt
+]
+.SH DESCRIPTION
+.PP
+.I Mq
+serves a 9p file tree representing groups of buffered two-way
+data streams for multiple readers and writers accessible through the
+standard
+.IR read (2)
+and
+.IR write (2)
+file I/O interface.
+.SS OVERVIEW
+.PP
+Streams may be organized within an arbitrary file tree structure,
+which provides a means of namespacing and grouping.
+.PP
+.EX
+	<group>
+		<group>*
+		<stream>*
+		order
+		ctl
+.EE
+.PP
+A directory denotes a group of streams.  Any number of streams
+and sub-groups may be created within a group.
+Grouped streams share configuration and an order file.
+.PP
+The read-only meta-stream called
+.I order
+provides ordering information for data written to streams
+within a group. Special readers, such as
+.IR mq-cat (1),
+can tap into this stream to retrieve data coming
+from multiple streams in the same order it was written.
+.PP
+Reading the
+.I ctl
+file yields status and configuration information for the group.
+Group owner can configure the group by writing
+control messages to the
+.I ctl
+file. Various supported stream modes and other properties
+are explained in the following sections. 
+.SS STREAMS
+.PP
+The data mode of the stream group determines the semantics of
+data read from the streams.
+.TP
+Message mode (default)
+Write boundaries are preserved: each read terminates when
+the read buffer is full or after reading the last byte of a write,
+whichever comes first.
+Readers which read less than the size of the corresponding
+write get a partial message, with no way of knowing
+this happened.
+This implies that communicating processes
+should agree on the maximum size of messages sent on the stream.
+Without specific agreement it is recommended that writes don't
+exceed 8192 bytes — the size of the
+.IR cat (1)
+read buffer.
+.TP
+Coalesced mode
+Coalesce writes into a contiguous byte-stream: each read
+terminates when the read buffer is full or after reading the last
+byte on the stream.
+.PP
+In both modes, if there's no data to read the read requests are
+blocked until new data is written.
+.PP
+Writing to the stream causes the write to be appended to the stream
+queue. The write is then immediately distributed to any blocked
+stream readers, as well as any blocked order file readers.
+Finally the write request is responded to. Note, however, that a
+successful write only signals that the write was fully processed by
+.IR mq (4).
+It does not signal that the data was received on the reader's end nor
+that it was processed by readers in any way.
+.PP
+Readers lagging behind, as well as so-called
+late readers, will be satisfied from the queue at individual pace.
+.PP
+There are three queue replay modes which determine how the late
+readers — those who open a non-empty stream — are handled.
+.TP
+No replay (default)
+A late reader is pointed to the very end of the queue,
+making it wait for fresh data to arrive.
+.TP
+Replay most recent
+A late reader is immediately responded to with the most recently
+queued data, if any.
+.TP
+Replay entire queue
+The late reader is pointed to the start of stream queue,
+letting it receive all the data that was written.
+.PP
+The amount of data persisted, the queue depth, is determined
+by the replay mode and a configurable depth parameter.
+For no-replay and most-recent streams the depth is based
+on the readers' progress through the queue: once all readers got
+the write it is dropped from the queue as it becomes unaccessible.
+For full-replay streams the depth is determined
+by the depth parameter, which is infinite by default but may be
+set to a certain number of writes or their combined size in
+bytes; the queue may also be cleared manually.
+As the queue fills up the old writes are dropped to
+make place for new ones. Slow readers who haven't reached
+the cutoff point are dropped with an error; this is to prevent
+resource exhaustion by faulty or malicious readers.
+.SS USAGE
+.PP
+With no flags
+.IR mq (4)
+speaks 9p on standard I/O descriptors. The
+.B -s
+flag posts the 9p channel
+.I name
+to
+.IR srv (3)
+instead, and the
+.B -m
+flag mounts the server at
+.IR mtpt.
+The
+.B -D
+flags turns on the 9p trace on error descriptor.
+.PP
+Creating a directory allocates a new stream group, with
+the files
+.I ctl
+and
+.I order
+being created automatically.
+Similarly, streams are allocated by creating files inside the group
+directory.
+.PP
+The file
+.I order
+can be read to obtain messages containing filenames of streams
+in sequence with writes happening on the named streams.
+Each message contains a single filename.
+.PP
+The
+.I ctl
+file accepts commands which change the configuration
+of streams within the group, as detailed in the previous section.
+Following is a short reference of the supported commands:
+.TF "............................"
+.TP
+.B data message | coalesce
+Sets the data mode.
+.TP
+.B replay no | last | all
+Sets the queue replay mode.
+.TP
+.B depth <size> | <count>
+Sets the queue depth.
+The
+.I size
+argument is specified in bytes, unless suffixed by
+K, M, or G.
+The
+.I count
+argument is a number.
+Depth of 0 means infinity.
+.PP
+By default only the group owner is allowed to make changes to
+the configuration. This is enforced through usual file permissions.
+It is, however, not advisable, and certain to cause trouble, to change
+the configuration after clients have connected.
+.SH EXAMPLES
+See the next section for full example programs.
+.SH SEE ALSO
+.IR mq-cat (1),
+.IR pin (1)
+.SH SOURCE
+.B git://src.a-b.xyz/mq
+.SH BUGS
+.PP
+No filesystem group permission checking is done, yet. This implies
+that only a single owner is allowed.
+.PP
+Half of this stuff is not implemented... and sure, the
+bugs, bugs — there'll be more, too.
