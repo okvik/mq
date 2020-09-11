@@ -99,13 +99,13 @@ main(int argc, char *argv[])
 		if((n = read(orderfd, name, sizeof(name)-1)) == 0)
 			break;
 		buf[n] = 0;
-		for(i = 0, s = streams; i < nstreams; i++, s++)
-			if(strcmp(s->name, name) == 0)
-			if(s->fd != -1){
-				if(rdwr(s->fd, 1) == 0)
+		for(i = 0, s = streams; i < nstreams; i++, s++){
+			if(strcmp(s->name, name) != 0 || s->fd == -1)
+				continue;
+			if(rdwr(s->fd, 1) == 0)
 					s->fd = -1;
-				break;
-			}
+			break;
+		}
 	}
 	exits(nil);
 }
