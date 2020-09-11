@@ -216,7 +216,7 @@ writealloc(long n)
 }
 
 void
-pipewrite(Req *r)
+streamwrite(Req *r)
 {
 	File *f = r->fid->file;
 	Stream *s = f->aux;
@@ -383,7 +383,7 @@ xwrite(Req *r)
 
 	switch(filetype(f)){
 	case Qstream:
-		pipewrite(r);
+		streamwrite(r);
 		break;
 	case Qctl:
 		ctlwrite(r);
