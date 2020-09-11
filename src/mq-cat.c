@@ -103,7 +103,7 @@ main(int argc, char *argv[])
 			if(strcmp(s->name, name) != 0 || s->fd == -1)
 				continue;
 			if(rdwr(s->fd, 1) == 0)
-					s->fd = -1;
+				s->fd = -1;
 			break;
 		}
 	}
