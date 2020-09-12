@@ -60,6 +60,8 @@ main(int argc, char *argv[])
 	for(;;){
 		if((n = read(orderfd, name, sizeof(name)-1)) == 0)
 			break;
+		if(n == -1)
+			sysfatal("read: %r");
 		name[n] = 0;
 		for(i = 0, s = streams; i < ns; i++, s++){
 			if(strcmp(s->name, name) != 0 || s->fd == -1)
