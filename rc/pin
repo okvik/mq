@@ -32,16 +32,33 @@ if(~ $#write 1){
 	if not
 		exec echo $cmd >>$mq/0
 }
-if(! test -d $mq){
+
+fn detach {
 	echo creating $mq >[1=2]
+
 	mkdir -p $mq
 	echo replay on >$mq/ctl
-	touch $mq/^(0 1 2)
+	touch $mq/^(0 1 2 note)
 	$cmd <$mq/0 >>$mq/1 >>[2]$mq/2 &
+	cat $mq/note >/proc/$apid/notepg &
 }
-if(~ $#noattach 1)
-	exit
-echo attaching $mq >[1=2]
-mq-cat $mq 0 1 2 &
-cat /proc/$pid/noteid >/proc/$apid/noteid
-exec cat >>$mq/0
+
+fn attach {
+	echo attaching $mq >[1=2]
+
+	rfork e
+	fn sigint {
+		echo -n interrupt >>$mq/note
+		status = interrupted
+	}
+	mq-cat $mq 0 1 2 &
+	cat </fd/0 >>$mq/0 &
+	wait $apid
+	while(~ $status interrupted)
+		wait $apid
+}
+
+if(! test -d $mq)
+	detach
+if(~ $#noattach 0)
+	attach
