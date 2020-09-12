@@ -1,4 +1,4 @@
-#!/bin/rc -e
+#!/bin/rc
 rfork en
 
 flagfmt = 'n:noattach, w:write, m:mtpt mtpt'
@@ -43,4 +43,5 @@ if(~ $#noattach 1)
 	exit
 echo attaching $mq >[1=2]
 mq-cat $mq &
+cat /proc/$pid/noteid >/proc/$apid/noteid
 exec cat >>$mq/0
