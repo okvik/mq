@@ -64,8 +64,10 @@ main(int argc, char *argv[])
 		for(i = 0, s = streams; i < ns; i++, s++){
 			if(strcmp(s->name, name) != 0 || s->fd == -1)
 				continue;
-			if(rdwr(s->fd, 1) == 0)
+			if(rdwr(s->fd, 1) == 0){
+				close(s->fd);
 				s->fd = -1;
+			}
 			break;
 		}
 	}
