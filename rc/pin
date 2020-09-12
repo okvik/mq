@@ -42,6 +42,6 @@ if(! test -d $mq){
 if(~ $#noattach 1)
 	exit
 echo attaching $mq >[1=2]
-mq-cat $mq &
+mq-cat $mq 0 1 2 &
 cat /proc/$pid/noteid >/proc/$apid/noteid
 exec cat >>$mq/0
