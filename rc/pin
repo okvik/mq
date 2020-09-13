@@ -57,6 +57,8 @@ fn input {
 	case q
 		term; exit
 	case *
+		walk -es /env/buf | awk '
+			{for(i = 0; i < $1; i++) printf "%c", 8}' >/dev/cons
 		cat /env/buf
 	}}
 }
