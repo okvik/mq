@@ -70,6 +70,7 @@ fn attach {
 		echo -n interrupt >>$mq/note
 		status = interrupted
 	}
+	fn sighup sigkill { term }
 	mq-cat $mq 0 1 2 &
 	killem = ($killem $apid)
 	input </fd/0 >>$mq/0 &
