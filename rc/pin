@@ -36,6 +36,7 @@ if(~ $#write 1){
 fn detach {
 	echo creating $mq >[1=2]
 
+	mq = $1
 	mkdir -p $mq
 	echo replay on >$mq/ctl
 	touch $mq/^(0 1 2 note)
@@ -43,22 +44,41 @@ fn detach {
 	cat $mq/note >/proc/$apid/notepg &
 }
 
+fn term {
+	for(p in $killem)
+		echo -n kill >/proc/$p/note
+}
+
+fn input {
+	while(){
+	syscall -o read 0 buf 8192 >/env/buf >[2]/dev/null \
+	|| {term; exit 'read error'}
+	switch(`{cat /env/buf}){
+	case q
+		term; exit
+	case *
+		cat /env/buf
+	}}
+}
+
 fn attach {
 	echo attaching $mq >[1=2]
 
 	rfork e
+	mq = $1
 	fn sigint {
 		echo -n interrupt >>$mq/note
 		status = interrupted
 	}
 	mq-cat $mq 0 1 2 &
-	cat </fd/0 >>$mq/0 &
+	killem = ($killem $apid)
+	input </fd/0 >>$mq/0 &
 	wait $apid
 	while(~ $status interrupted)
 		wait $apid
 }
 
 if(! test -d $mq)
-	detach
+	detach $mq
 if(~ $#noattach 0)
-	attach
+	attach $mq
