@@ -18,7 +18,7 @@ struct Mq {
 	Stream *order;
 
 	/* configuration */
-	int replay;
+	enum {Replayoff, Replaylast, Replayall} replay;
 };
 
 struct Stream {
@@ -85,7 +85,7 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 	mq = emalloc(sizeof(Mq));
 	mq->group = (Stream*)listalloc();
 	mq->order = (Stream*)streamalloc(mq);
-	mq->replay = 0;
+	mq->replay = Replayoff;
 
 	ctl = order = nil;
 	if((d = createfile(parent, name, uid, perm, mq)) == nil)
@@ -266,7 +266,7 @@ enum {
 	Cmddebug, Cmddebug9p,
 };
 Cmdtab mqcmd[] = {
-	/* replay on|off*/
+	/* replay off|last|all */
 	{Cmdreplay, "replay", 2},
 
 	/* debug on|off */
@@ -293,13 +293,16 @@ ctlwrite(Req *r)
 	}
 	switch(t->index){
 	case Cmdreplay: {
-		if(strncmp(cmd->f[1], "on", 2) == 0)
-			mq->replay = 1;
-		else
 		if(strncmp(cmd->f[1], "off", 3) == 0)
-			mq->replay = 0;
+			mq->replay = Replayoff;
 		else
-			e = "usage: replay on|off";
+		if(strncmp(cmd->f[1], "last", 4) == 0)
+			mq->replay = Replaylast;
+		else
+		if(strncmp(cmd->f[1], "all", 3) == 0)
+			mq->replay = Replayall;
+		else
+			e = "usage: replay off|last|all";
 		break;
 	}
 	case Cmddebug: {
@@ -367,10 +370,14 @@ xopen(Req *r)
 		Client *c;
 
 		c = r->fid->aux = emalloc(sizeof(Client));
-		if(s->mq->replay)
-			c->cursor = (Write*)s->queue;
-		else
-			c->cursor = (Write*)s->queue->tail;
+		switch(s->mq->replay){
+		case Replayoff:
+			c->cursor = (Write*)s->queue->tail; break;
+		case Replaylast:
+			c->cursor = (Write*)s->queue->tail->tail; break;
+		case Replayall:
+			c->cursor = (Write*)s->queue; break;
+		}
 		break;
 	}}
 	respond(r, nil);

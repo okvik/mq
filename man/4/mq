@@ -165,7 +165,7 @@ Following is a short reference of the supported commands:
 .B data message | coalesce
 Sets the data mode.
 .TP
-.B replay no | last | all
+.B replay off | last | all
 Sets the queue replay mode.
 .TP
 .B depth <size> | <count>
