@@ -4,7 +4,6 @@ TODO
 * Manual pages
     * mq-cat(1)
 * Access control
-    * implement Twstat
     * full group permission checking
 * Configuration
 	* report configuration and status on 'ctl' read
@@ -17,3 +16,4 @@ TODO
     * concurrent fid readers
       * same data, unique data
     * handling partial reads
+ 
