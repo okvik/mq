@@ -434,6 +434,74 @@ xflush(Req *r)
 }
 
 void
+xwstat(Req *r)
+{
+	File *w, *f = r->fid->file;
+	char *uid = r->fid->uid;
+
+	/* To change name, must have write permission in parent. */
+	if(r->d.name[0] != '\0' && strcmp(r->d.name, f->name) != 0){
+		if((w = f->parent) == nil)
+			goto perm;
+		incref(w);
+	 	if(!hasperm(w, uid, AWRITE)){
+			closefile(w);
+			goto perm;
+		}
+		if((w = walkfile(w, r->d.name)) != nil){
+			closefile(w);
+			respond(r, "file already exists");
+			return;
+		}
+	}
+
+	/* To change group, must be owner and member of new group,
+	 * or leader of current group and leader of new group.
+	 * Second case cannot happen, but we check anyway. */
+	while(r->d.gid[0] != '\0' && strcmp(f->gid, r->d.gid) != 0){
+		if(strcmp(uid, f->uid) == 0)
+			break;
+		if(strcmp(uid, f->gid) == 0)
+		if(strcmp(uid, r->d.gid) == 0)
+			break;
+		respond(r, "not owner");
+		return;
+	}
+
+	/* To change mode, must be owner or group leader.
+	 * Because of lack of users file, leader=>group itself. */
+	if(r->d.mode != ~0 && f->mode != r->d.mode){
+		if(strcmp(uid, f->uid) != 0)
+		if(strcmp(uid, f->gid) != 0){
+			respond(r, "not owner");
+			return;
+		}
+	}
+
+	if(r->d.name[0] != '\0'){
+		free(f->name);
+		f->name = estrdup(r->d.name);
+	}
+	if(r->d.uid[0] != '\0'){
+		free(f->uid);
+		f->uid = estrdup(r->d.uid);
+	}
+	if(r->d.gid[0] != '\0'){
+		free(f->gid);
+		f->gid = estrdup(r->d.gid);
+	}
+	if(r->d.mode != ~0){
+		f->mode = r->d.mode;
+		f->qid.type = f->mode >> 24;
+	}
+
+	respond(r, nil);
+	return;
+perm:
+	respond(r, "permission denied");
+}
+
+void
 xdestroyfid(Fid *fid)
 {
 	Client *f = fid->aux;
@@ -461,6 +529,7 @@ Srv fs = {
 	.write = xwrite,
 	.read = xread,
 	.flush = xflush,
+	.wstat = xwstat,
 	.destroyfid = xdestroyfid,
 };
 
