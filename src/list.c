@@ -35,13 +35,25 @@ listunlink(List *p)
 }
 
 int
-listend(List *p)
+listisempty(List *p)
 {
-	return p->link->tag == Listlead;
+	return p->link == p;
 }
 
 int
-listempty(List *p)
+listislead(List *p)
 {
-	return p->link == p;
+	return p->tag == Listlead;
+}
+
+int
+listisfirst(List *p)
+{
+	return p->tail->tag == Listlead;
+}
+
+int
+listislast(List *p)
+{
+	return p->link->tag == Listlead;
 }

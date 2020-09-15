@@ -38,7 +38,7 @@ fn detach {
 
 	mq = $1
 	mkdir -p $mq
-	echo replay on >$mq/ctl
+	echo replay all >$mq/ctl
 	touch $mq/^(0 1 2 note)
 	$cmd <$mq/0 >>$mq/1 >>[2]$mq/2 &
 	cat $mq/note >/proc/$apid/notepg &

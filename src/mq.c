@@ -18,6 +18,7 @@ struct Mq {
 	Stream *order;
 
 	/* configuration */
+	enum {Message, Coalesce} mode;
 	enum {Replayoff, Replaylast, Replayall} replay;
 };
 
@@ -31,7 +32,8 @@ struct Stream {
 };
 
 struct Client {
-	Write *cursor; /* reader position */
+	Write *cursor; /* current chunk */
+	vlong offset; /* chunk offset; for coalesce mode */
 };
 
 struct Read {
@@ -85,6 +87,7 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 	mq = emalloc(sizeof(Mq));
 	mq->group = (Stream*)listalloc();
 	mq->order = (Stream*)streamalloc(mq);
+	mq->mode = Message;
 	mq->replay = Replayoff;
 
 	ctl = order = nil;
@@ -178,10 +181,43 @@ streamcreate(File *parent, char *name, char *uid, ulong perm)
 }
 
 void
-respondread(Req *r, Write *w)
+respondmessage(Req *r)
 {
+	Client *c = r->fid->aux;
+	Write *w = c->cursor;
+
 	r->ofcall.count = w->count;
 	memmove(r->ofcall.data, w->data, w->count);
+	respond(r, nil);
+}
+
+void
+respondcoalesce(Req *r)
+{
+	Client *c = r->fid->aux;
+	Write *w;
+	/* request size and offset, chunk size and offset, total read */
+	vlong rn, ro, n, o, t;
+
+	ro = o = t = 0;
+	rn = r->ifcall.count;
+	w = c->cursor;
+	foreach(Write*, w){
+		w = ptr;
+		for(o = c->offset; (n = w->count - o) > 0; o += n){
+			if(t == rn)
+				goto done;
+			if(n > rn - ro)
+				n = rn - ro;
+			memmove(r->ofcall.data+ro, w->data+o, n);
+			ro += n; t += n;
+		}
+		c->offset = 0;
+	}
+done:
+	c->cursor = w;
+	c->offset = o;
+	r->ofcall.count = t;
 	respond(r, nil);
 }
 
@@ -194,15 +230,24 @@ streamread(Req *r)
 	Read *rd;
 
 	/* Delay the response if the queue is empty
-	 * or if we've already caught up. */
-	if(listempty(s->queue) || listend(c->cursor)){
-		rd = emalloc(sizeof(Read));
-		rd->r = r;
-		listlink(s->reads, rd);
+	 * or if we've already caught up, respond otherwise. */
+	switch(s->mq->mode){
+	case Message:
+		if(listisempty(s->queue) || listislast(c->cursor))
+			break;
+		c->cursor = (Write*)c->cursor->link;
+		respondmessage(r);
+		return;
+	case Coalesce:
+		if(listisempty(s->queue)
+		|| (listislast(c->cursor) && c->offset == c->cursor->count))
+			break;
+		respondcoalesce(r);
 		return;
 	}
-	c->cursor = (Write*)c->cursor->link;
-	respondread(r, c->cursor);
+	rd = emalloc(sizeof(Read));
+	rd->r = r;
+	listlink(s->reads, rd);
 }
 
 Write*
@@ -243,18 +288,26 @@ streamwrite(Req *r)
 	foreach(Read*, s->reads){
 		Client *c = ptr->r->fid->aux;
 
-		respondread(ptr->r, w);
 		c->cursor = w;
-		listunlink(ptr);
+		c->offset = 0;
+		switch(mq->mode){
+		case Message:
+			respondmessage(ptr->r); break;
+		case Coalesce:
+			respondcoalesce(ptr->r); break;
+		}
+		ptr = (Read*)ptr->tail;
+		free(listunlink(ptr->link));
 	}
 
 	/* Kick the blocked order readers */
 	foreach(Read*, mq->order->reads){
 		Client *c = ptr->r->fid->aux;
 
-		respondread(ptr->r, o);
 		c->cursor = o;
-		listunlink(ptr);
+		respondmessage(ptr->r);
+		ptr = (Read*)ptr->tail;
+		free(listunlink(ptr->link));
 	}
 
 	r->ofcall.count = r->ifcall.count;
@@ -262,10 +315,13 @@ streamwrite(Req *r)
 }
 
 enum {
+	Cmddata,
 	Cmdreplay,
 	Cmddebug, Cmddebug9p,
 };
 Cmdtab mqcmd[] = {
+	/* data message|coalesce */
+	{Cmddata, "data", 2},
 	/* replay off|last|all */
 	{Cmdreplay, "replay", 2},
 
@@ -292,6 +348,16 @@ ctlwrite(Req *r)
 		return;
 	}
 	switch(t->index){
+	case Cmddata: {
+		if(strncmp(cmd->f[1], "message", 7) == 0)
+			mq->mode = Message;
+		else
+		if(strncmp(cmd->f[1], "coalesce", 8) == 0)
+			mq->mode = Coalesce;
+		else
+			e = "usage: data message|coalesce";
+		break;
+	}
 	case Cmdreplay: {
 		if(strncmp(cmd->f[1], "off", 3) == 0)
 			mq->replay = Replayoff;

@@ -12,8 +12,6 @@ TODO
 	* manual clear and limits in replay mode
 		* drop very slow readers
 * Read
-    * coalesced mode
     * concurrent fid readers
       * same data, unique data
     * handling partial reads
- 

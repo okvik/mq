@@ -11,10 +11,12 @@ struct List {
 
 /* What. */
 #define foreach(type, list) \
-	for(type ptr = (type)(list)->link; ptr->tag != Listlead; ptr = (type)ptr->link)
+	for(type ptr = listislead((list)) ? (type)(list)->link : (list); ptr->tag != Listlead; ptr = (type)ptr->link)
 
 List* listalloc(void);
 List* listlink(List*, List*);
 List* listunlink(List*);
-int listempty(List*);
-int listend(List*);
+int listisempty(List*);
+int listislead(List*);
+int listisfirst(List*);
+int listislast(List*);
