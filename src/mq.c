@@ -95,7 +95,7 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 		goto err;
 	filesettype(d, Qmq);
 
-	if((ctl = createfile(d, "ctl", nil, 0220, mq)) == nil)
+	if((ctl = createfile(d, "ctl", nil, 0664, mq)) == nil)
 		goto err;
 	filesettype(ctl, Qctl);
 	closefile(ctl);
@@ -314,6 +314,28 @@ streamwrite(Req *r)
 	respond(r, nil);
 }
 
+void
+ctlread(Req *r)
+{
+	File *f = r->fid->file;
+	Mq *mq = f->aux;
+	char buf[256];
+
+	char *mode2str[] = {
+		[Message] "message",
+		[Coalesce] "coalesce",
+	};
+	char *replay2str[] = {
+		[Replayoff] "off",
+		[Replaylast] "last",
+		[Replayall] "all",
+	};
+	snprint(buf, sizeof buf, "data %s\nreplay %s\n",
+		mode2str[mq->mode], replay2str[mq->replay]);
+	readstr(r, buf);
+	respond(r, nil);
+}
+
 enum {
 	Cmddata,
 	Cmdreplay,
@@ -476,6 +498,9 @@ xread(Req *r)
 	case Qstream:
 	case Qorder:
 		streamread(r);
+		break;
+	case Qctl:
+		ctlread(r);
 		break;
 	default:
 		respond(r, "forbidden");
