@@ -17,7 +17,3 @@ TODO
     * concurrent fid readers
       * same data, unique data
     * handling partial reads
-* pin(1)
-    * note handling
-    * (?) erase stdin replay in current shell
-    * (?) meta-commands a là hubshell(1)
