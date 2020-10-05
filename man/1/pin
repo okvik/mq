@@ -4,12 +4,12 @@ pin \- pinned I/O shell
 .SH SYNOPSIS
 pin
 [
-.B -nw
+.B -acw
 ] [
 .B -m
 .I mtpt
 ] [
-.I name
+.I id
 ] [
 .I command
 ]
@@ -22,27 +22,26 @@ connected to a named
 .IR mq (4)
 stream group.
 .PP
-If a session
-.I name
-exists, then
-.B pin mysession
-will join the named session,
-otherwise a new session will be created.
-The command run in the session is
-.IR command ,
+The 
+.B -c
+flag creates a session
+.I id
+running
+.I command,
 or
 .B rc -i
 if command is not given.
 .PP
 The
-.B -n
-flag supresses joining of existing session.
+.B -a
+flag attaches to a session
+.I id.
 .PP
 The -w
 flag writes the
 .I command
 string, or standard input if not given, to
-the input stream of an existing session.
+a session's input stream.
 .PP
 Under the hood,
 .I pin
@@ -64,21 +63,21 @@ creating it if needed.
 .PP
 Pin an
 .BR rc (1)
-shell, or join an already existing session:
+shell and attach to it
 .EX
-	pin myshell
+	pin -ca myshell
 .EE
 .PP
-Pin some other program:
+Pin another program
 .EX
-	pin remote rcpu -h remote
+	pin -c remote rcpu -h remote
 .EE
 .PP
-Send input to a pinned program:
+Send input to a pinned program
 .EX
 	pin -w myshell echo 'hi, shell'
 .EE
-or:
+or
 .EX
 	echo 'echo hi, shell' | pin -w myshell
 .EE

@@ -1,39 +1,7 @@
 #!/bin/rc
 rfork e
 
-flagfmt = 'n:noattach, w:write, m:mtpt mtpt'
-args = 'name [command]'
-eval `''{aux/getflags $*} || exec aux/usage
-
-srv = pin-$user
-name = $1
-if(~ $#name 0)
-	exec aux/usage
-cmd = $*(2-)
-if(~ $#cmd 0){
-	nocmd = 1
-	cmd = (rc -i)
-}
-if(~ $#mtpt 0)
-	mtpt = /n/pin
-
-# Check if already mounted
-if(! ~ `{walk -n0 -eq $mtpt} a000000000000000.0.80){
-	if(test -e /srv/$srv)
-		mount -c /srv/$srv $mtpt
-	if not
-		mq -s $srv -m $mtpt
-}
-
-mq = $mtpt/$name
-if(~ $#write 1){
-	if(~ $nocmd 1)
-		exec cat >>$mq/0
-	if not
-		exec echo $cmd >>$mq/0
-}
-
-fn detach {
+fn create {
 	echo creating $mq >[1=2]
 
 	mq = $1
@@ -81,7 +49,43 @@ fn attach {
 		wait $apid
 }
 
-if(! test -d $mq)
-	detach $mq
-if(~ $#noattach 0)
+flagfmt = 'a:attach, c:create, w:write, m:mtpt mtpt'
+args = 'id [command]'
+eval `''{aux/getflags $*} || exec aux/usage
+
+srv = pin-$user
+id = $1
+if(~ $#id 0)
+	exec aux/usage
+cmd = $*(2-)
+if(~ $#cmd 0){
+	nocmd = 1
+	cmd = (rc -i)
+}
+if(~ $#mtpt 0)
+	mtpt = /n/pin
+
+# Run and mount if not already mounted
+if(! ~ `{walk -n0 -eq $mtpt} a000000000000000.0.80){
+	if(test -e /srv/$srv)
+		mount -c /srv/$srv $mtpt
+	if not
+		mq -s $srv -m $mtpt
+}
+
+mq = $mtpt/$id
+if(~ $#write 1){
+	if(~ $nocmd 1)
+		exec cat >>$mq/0
+	if not
+		exec echo $cmd >>$mq/0
+}
+if(~ $#create 1){
+	if(test -d $mq){
+		echo $mq already exists >[1=2]
+		exit 'pin exists'
+	}
+	create $mq
+}
+if(~ $#attach 1)
 	attach $mq
