@@ -1,5 +1,5 @@
 #!/bin/rc
-rfork en
+rfork e
 
 flagfmt = 'n:noattach, w:write, m:mtpt mtpt'
 args = 'name [command]'
