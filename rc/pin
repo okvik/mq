@@ -2,8 +2,6 @@
 rfork e
 
 fn create {
-	echo creating $mq >[1=2]
-
 	mq = $1
 	mkdir -p $mq
 	echo replay all >$mq/ctl
@@ -32,8 +30,6 @@ fn input {
 }
 
 fn attach {
-	echo attaching $mq >[1=2]
-
 	rfork e
 	mq = $1
 	fn sigint {
