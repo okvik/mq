@@ -365,8 +365,8 @@ ctlwrite(Req *r)
 	cmd = parsecmd(r->ifcall.data, r->ifcall.count);
 	t = lookupcmd(cmd, mqcmd, nelem(mqcmd));
 	if(t == nil){
-		free(cmd);
 		respondcmderror(r, cmd, "%r");
+		free(cmd);
 		return;
 	}
 	switch(t->index){
