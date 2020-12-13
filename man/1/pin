@@ -9,6 +9,9 @@ pin
 .B -m
 .I mtpt
 ] [
+.B -s
+.I mq
+] [
 .I id
 ] [
 .I command
@@ -48,7 +51,7 @@ Under the hood,
 expects an
 .IR mq (4)
 instance mounted on
-.BR /n/pin
+.B /n/pin
 or
 .I mtpt
 in case the
@@ -57,8 +60,12 @@ option is given.
 If no such mount is present,
 .I pin
 mounts the channel posted on
-.BR /srv/pin-$user ,
-creating it if needed.
+.B /srv/pin-$user
+or
+.B /srv/$mq
+in case the
+.B -s
+option is given, creating it if needed.
 .SH EXAMPLES
 .PP
 Pin an

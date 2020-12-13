@@ -45,11 +45,14 @@ fn attach {
 		wait $apid
 }
 
-flagfmt = 'a:attach, c:create, w:write, m:mtpt mtpt'
+flagfmt = 'a:attach, c:create, w:write, m:mtpt mtpt, s:srv srv'
 args = 'id [command]'
 eval `''{aux/getflags $*} || exec aux/usage
 
-srv = pin-$user
+if(~ $#srv 0)
+	srv = pin-$user
+if(~ $#mtpt 0)
+	mtpt = /n/pin
 id = $1
 if(~ $#id 0)
 	exec aux/usage
@@ -58,8 +61,6 @@ if(~ $#cmd 0){
 	nocmd = 1
 	cmd = (rc -i)
 }
-if(~ $#mtpt 0)
-	mtpt = /n/pin
 
 # Run and mount if not already mounted
 if(! ~ `{walk -n0 -eq $mtpt} a000000000000000.0.80){
