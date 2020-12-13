@@ -52,12 +52,13 @@ struct Write {
 };
 
 enum {
-	/* Dirty trick to help clients tell us from most others. */
+	/* Dirty trick to help clients tell our
+	 * root from most others, see pin(1). */
 	Qroot = 0xA,
-		Qmq = 0x1,
-			Qstream,
-			Qorder,
-			Qctl,
+	Qmq = 0x1,
+		Qstream,
+		Qorder,
+		Qctl,
 };
 void
 filesettype(File *f, ushort type)
@@ -66,7 +67,8 @@ filesettype(File *f, ushort type)
 	 * Use four most-significant bits to store the type.
 	 * This depends on the 9pfile(2) library generating
 	 * simple incremental qid paths.
-	*/
+	 */
+	f->qid.path &= ~(uvlong)0xF<<60;
 	f->qid.path |= (uvlong)(type&0xF)<<60;
 }
 
@@ -91,7 +93,13 @@ mqcreate(File *parent, char *name, char *uid, ulong perm)
 	mq->replay = Replayoff;
 
 	ctl = order = nil;
-	if((d = createfile(parent, name, uid, perm, mq)) == nil)
+	if(strcmp(name, "/") == 0){
+		d = parent;
+		d->aux = mq;
+	}
+	else
+		d = createfile(parent, name, uid, perm, mq);
+	if(d == nil)
 		goto err;
 	filesettype(d, Qmq);
 
@@ -428,11 +436,6 @@ xcreate(Req *r)
 
 	switch(filetype(parent)){
 	case Qroot:
-		if(!(perm&DMDIR)){
-			respond(r, "forbidden");
-			return;
-		}
-		/* fallthrough */
 	case Qmq:
 		if(perm&DMDIR)
 			f = mqcreate(parent, name, uid, perm);
@@ -441,7 +444,7 @@ xcreate(Req *r)
 		break;
 	}
 	if(f == nil)
-		responderror(r);
+		respond(r, "internal failure");
 	else
 		respond(r, nil);
 }
@@ -652,6 +655,7 @@ main(int argc, char *argv[])
 	}ARGEND;
 
 	fs.tree = alloctree(nil, nil, DMDIR|0777, xdestroyfile);
+	mqcreate(fs.tree->root, "/", nil, 0);
 	filesettype(fs.tree->root, Qroot);
 
 	if(name || mtpt){

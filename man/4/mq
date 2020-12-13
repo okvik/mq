@@ -148,6 +148,7 @@ and
 being created automatically.
 Similarly, streams are allocated by creating files inside the group
 directory.
+On startup an empty stream group is allocated at the root level.
 .PP
 The file
 .I order
