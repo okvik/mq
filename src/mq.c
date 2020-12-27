@@ -211,12 +211,12 @@ respondcoalesce(Req *r)
 	/* request size and offset, chunk size and offset, total read */
 	vlong rn, ro, n, o, t;
 
-	ro = o = t = 0;
+	ro = 0; o = 0; t = 0;
 	rn = r->ifcall.count;
 	w = c->cursor;
 	foreach(Write*, w){
 		w = ptr;
-		for(o = c->offset; (n = w->count - o) > 0; o += n){
+		for(o = c->offset; n = w->count - o, n > 0; o += n){
 			if(t == rn)
 				goto done;
 			if(n > rn - ro)
