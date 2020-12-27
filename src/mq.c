@@ -191,11 +191,15 @@ streamcreate(File *parent, char *name, char *uid, ulong perm)
 void
 respondmessage(Req *r)
 {
+	int n;
 	Client *c = r->fid->aux;
 	Write *w = c->cursor;
-
-	r->ofcall.count = w->count;
-	memmove(r->ofcall.data, w->data, w->count);
+	
+	n = w->count;
+	if(n > r->ifcall.count)
+		n = r->ifcall.count;
+	r->ofcall.count = n;
+	memmove(r->ofcall.data, w->data, n);
 	respond(r, nil);
 }
 
