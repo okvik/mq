@@ -63,7 +63,7 @@ if(~ $#cmd 0){
 }
 
 # Run and mount if not already mounted
-if(! ~ `{walk -n0 -eq $mtpt} a000000000000000.0.80){
+if(! ~ `{walk -n0 -eq $mtpt >[2]/dev/null} a000000000000000.0.80){
 	if(test -e /srv/$srv)
 		mount -c /srv/$srv $mtpt
 	if not
