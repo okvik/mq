@@ -54,9 +54,6 @@ install:V: $INST
 
 installall:V: install.cpus
 
-package:V: all
-	tar -czf mq.tgz bin/ rc/ man/
-
 uninstall:V:
 	rm -f $INST
 
