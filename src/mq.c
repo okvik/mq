@@ -189,6 +189,23 @@ streamcreate(File *parent, char *name, char *uid, ulong perm)
 }
 
 void
+streamopen(Stream *s, Req *r)
+{
+	Client *c;
+	
+	c = r->fid->aux = emalloc(sizeof(Client));
+	switch(s->mq->replay){
+	case Replayoff:
+		c->cursor = (Write*)s->queue->tail; break;
+	case Replaylast:
+		c->cursor = (Write*)s->queue->tail->tail; break;
+	case Replayall:
+		c->cursor = (Write*)s->queue; break;
+	}
+}
+
+
+void
 respondmessage(Req *r)
 {
 	int n;
@@ -443,8 +460,12 @@ xcreate(Req *r)
 	case Qmq:
 		if(perm&DMDIR)
 			f = mqcreate(parent, name, uid, perm);
-		else
+		else{
 			f = streamcreate(parent, name, uid, perm);
+			r->fid->file = f;
+			r->ofcall.qid = f->qid;
+			streamopen(f->aux, r);
+		}
 		break;
 	}
 	if(f == nil)
@@ -460,21 +481,10 @@ xopen(Req *r)
 
 	switch(filetype(f)){
 	case Qstream:
-	case Qorder: {
-		Stream *s = f->aux;
-		Client *c;
-
-		c = r->fid->aux = emalloc(sizeof(Client));
-		switch(s->mq->replay){
-		case Replayoff:
-			c->cursor = (Write*)s->queue->tail; break;
-		case Replaylast:
-			c->cursor = (Write*)s->queue->tail->tail; break;
-		case Replayall:
-			c->cursor = (Write*)s->queue; break;
-		}
+	case Qorder:
+		streamopen(f->aux, r);
 		break;
-	}}
+	}
 	respond(r, nil);
 }
 
