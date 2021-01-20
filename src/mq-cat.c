@@ -15,7 +15,7 @@ char buf[8192];
 void
 usage(void)
 {
-	fprint(2, "usage: %s mq stream ...\n", argv0);
+	fprint(2, "usage: %s group stream ...\n", argv0);
 	exits("usage");
 }
 
