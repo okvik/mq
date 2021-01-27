@@ -666,7 +666,7 @@ main(int argc, char *argv[])
 	default: usage();
 	}ARGEND;
 
-	fs.tree = alloctree(nil, nil, DMDIR|0777, xdestroyfile);
+	fs.tree = alloctree(nil, nil, DMDIR|0775, xdestroyfile);
 	groupcreate(fs.tree->root, "/", nil, 0);
 	filesettype(fs.tree->root, Qroot);
 
