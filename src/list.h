@@ -1,22 +1,23 @@
-enum { Listlead = 0xAA };
+typedef struct Listelem Listelem;
 
-typedef struct List List;
-
-/* Must be embedded at the top of struct */
-struct List {
-	uchar tag;
-	List *link;
-	List *tail;
+struct Listelem {
+	void *front;
+	void *back;
 };
 
-/* What. */
-#define foreach(type, list) \
-	for(type ptr = listislead((list)) ? (type)(list)->link : (list); ptr->tag != Listlead; ptr = (type)ptr->link)
+Listelem* listinit(Listelem*);
+Listelem* listlink(Listelem*, Listelem*);
+Listelem* listunlink(Listelem*);
+int listisempty(Listelem*);
+int listisfirst(Listelem*, Listelem*);
+int listislast(Listelem*, Listelem*);
 
-List* listalloc(void);
-List* listlink(List*, List*);
-List* listunlink(List*);
-int listisempty(List*);
-int listislead(List*);
-int listisfirst(List*);
-int listislast(List*);
+#define listeach(type, sentinel, ptr) \
+	for(type _next = (sentinel)->front; \
+	    (ptr) = _next, _next = (ptr)->front, (ptr) != (sentinel); )
+
+#define listrange(type, sentinel, ptr) \
+	for(type _next; \
+	    _next = (ptr)->front, (ptr) != (sentinel); \
+	    (ptr) = _next)
+
