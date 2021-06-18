@@ -149,7 +149,7 @@ streamclose(Stream *s)
 		listunlink(r);
 		free(r);
 	}
-	free(s->wqueue);
+	free(s->rqueue);
 	listeach(Write*, s->wqueue, w){
 		listunlink(w);
 		free(w);
