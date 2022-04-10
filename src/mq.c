@@ -13,29 +13,6 @@ typedef struct Client Client;
 typedef struct Read Read;
 typedef struct Write Write;
 
-struct Read {
-	Listelem;
-
-	Req *req;
-};
-
-struct Write {
-	Listelem;
-
-	/* Twrite.ifcall */
-	vlong offset;
-	uint count;
-	uchar *data;
-};
-
-struct Stream {
-	Listelem;
-
-	Group *group;
-	Write *wqueue;
-	Read *rqueue;
-};
-
 struct Group {
 	Stream *streams;
 	Stream *order;
@@ -44,10 +21,32 @@ struct Group {
 	enum {Replayoff, Replaylast, Replayall} replay;
 };
 
+struct Stream {
+	List;
+
+	Group *parent;
+	Write *wqueue;
+	Read *rqueue;
+};
+
 struct Client {
 	Write *cursor;
 	vlong offset;
-	int blocked;
+};
+
+struct Read {
+	List;
+
+	Req *r;
+};
+
+struct Write {
+	List;
+
+	/* Twrite.ifcall */
+	vlong offset;
+	uint count;
+	uchar *data;
 };
 
 enum {
@@ -67,7 +66,7 @@ filesettype(File *f, ushort type)
 	 * This depends on the 9pfile(2) library generating
 	 * simple incremental qid paths.
 	 */
-	f->qid.path &= ~((uvlong)0xF<<60);
+	f->qid.path &= ~(uvlong)0xF<<60;
 	f->qid.path |= (uvlong)(type&0xF)<<60;
 }
 
@@ -78,7 +77,7 @@ filetype(File *f)
 }
 
 File*
-groupcreate(File *dir, char *name, char *uid, ulong perm)
+groupcreate(File *parent, char *name, char *uid, ulong perm)
 {
 	Stream *streamalloc(Group*);
 	void *streamclose(Stream*);
@@ -86,18 +85,18 @@ groupcreate(File *dir, char *name, char *uid, ulong perm)
 	Group *group;
 
 	group = emalloc(sizeof(Group));
-	group->streams = (Stream*)listinit(emalloc(sizeof(Stream)));
-	group->order = streamalloc(group);
+	group->streams = (Stream*)listalloc();
+	group->order = (Stream*)streamalloc(group);
 	group->mode = Message;
 	group->replay = Replayoff;
 
 	ctl = order = nil;
 	if(strcmp(name, "/") == 0){
-		d = dir;
+		d = parent;
 		d->aux = group;
 	}
 	else
-		d = createfile(dir, name, uid, perm, group);
+		d = createfile(parent, name, uid, perm, group);
 	if(d == nil)
 		goto err;
 	filesettype(d, Qgroup);
@@ -114,6 +113,7 @@ groupcreate(File *dir, char *name, char *uid, ulong perm)
 
 	return d;
 err:
+	free(group->streams);
 	streamclose(group->order);
 	if(d) closefile(d);
 	if(ctl) closefile(ctl);
@@ -122,20 +122,22 @@ err:
 }
 
 void
-groupclose(Group *g)
+groupclose(File *f)
 {
-	free(g);
+	Group *group = f->aux;
+
+	free(group);
 }
 
 Stream*
-streamalloc(Group *g)
+streamalloc(Group *group)
 {
 	Stream *s;
 	
 	s = emalloc(sizeof(Stream));
-	s->group = g;
-	s->wqueue = (Write*)listinit(emalloc(sizeof(Write)));
-	s->rqueue = (Read*)listinit(emalloc(sizeof(Read)));
+	s->parent = group;
+	s->wqueue = (Write*)listalloc();
+	s->rqueue = (Read*)listalloc();
 	return s;
 }
 
@@ -145,133 +147,134 @@ streamclose(Stream *s)
 	Read *r;
 	Write *w;
 
-	listeach(Read*, s->rqueue, r){
+	listunlink(s);
+	if(s->rqueue)
+	foreach(Read*, s->rqueue){
+		/* eof these? */
+		r = ptr;
+		ptr = (Read*)r->tail;
 		listunlink(r);
 		free(r);
 	}
 	free(s->rqueue);
-	listeach(Write*, s->wqueue, w){
+	if(s->wqueue)
+	foreach(Write*, s->wqueue){
+		w = ptr;
+		ptr = (Write*)w->tail;
 		listunlink(w);
 		free(w);
 	}
 	free(s->wqueue);
-	listunlink(s);
 	free(s);
 }
 
 File*
-streamcreate(File *dir, char *name, char *uid, ulong perm)
+streamcreate(File *parent, char *name, char *uid, ulong perm)
 {
 	File *f;
 	Group *group;
 	Stream *s;
 
-	group = dir->aux;
+	group = parent->aux;
 	s = streamalloc(group);
-	if((f = createfile(dir, name, uid, perm, s)) == nil){
+	if((f = createfile(parent, name, uid, perm, s)) == nil){
 		streamclose(s);
 		return nil;
 	}
-	filesettype(f, Qstream);
 	listlink(group->streams, s);
+	filesettype(f, Qstream);
 	return f;
 }
 
 void
-streamopen(Stream *s, Req *req)
+streamopen(Stream *s, Req *r)
 {
 	Client *c;
 	
-	c = req->fid->aux = emalloc(sizeof(Client));
-	switch(s->group->replay){
+	c = r->fid->aux = emalloc(sizeof(Client));
+	switch(s->parent->replay){
 	case Replayoff:
-		c->offset = 0;
-		c->blocked = 1;
-		c->cursor = nil;
-		break;
-
-	case Replayall:
-		c->offset = 0;
-		if(listisempty(s->wqueue)){
-			c->blocked = 1;
-			c->cursor = nil;
-		}else{
-			c->blocked = 0;
-			c->cursor = s->wqueue->front;
-		}
-		break;
-
+		c->cursor = (Write*)s->wqueue->tail; break;
 	case Replaylast:
-		c->offset = 0;
-		if(listisempty(s->wqueue)){
-			c->blocked = 1;
-			c->cursor = nil;
-		}else{
-			c->blocked = 0;
-			c->cursor = s->wqueue->back;
-		}
-		break;
+		c->cursor = (Write*)s->wqueue->tail->tail; break;
+	case Replayall:
+		c->cursor = (Write*)s->wqueue; break;
 	}
 }
 
-void
-streamrespond(Req *req, int mode)
-{
-	Client *c = req->fid->aux;
-	Stream *s = req->fid->file->aux;
-	Write *w;
-	/* request size, response buffer offset */
-	vlong rn, ro;
-	/* chunk size and offset, total read */
-	vlong n, o, t;
 
-	t = 0;
-	rn = req->ifcall.count;
-	ro = 0;
+void
+respondmessage(Req *r)
+{
+	int n;
+	Client *c = r->fid->aux;
+	Write *w = c->cursor;
+	
+	n = w->count;
+	if(n > r->ifcall.count)
+		n = r->ifcall.count;
+	r->ofcall.count = n;
+	memmove(r->ofcall.data, w->data, n);
+	respond(r, nil);
+}
+
+void
+respondcoalesce(Req *r)
+{
+	Client *c = r->fid->aux;
+	Write *w;
+	/* request size and offset, chunk size and offset, total read */
+	vlong rn, ro, n, o, t;
+
+	ro = 0; o = 0; t = 0;
+	rn = r->ifcall.count;
 	w = c->cursor;
-	o = c->offset;
-	listrange(Write*, s->wqueue, w){
-		if(mode == Message && w != c->cursor)
-			break;
-		for(; n = w->count - o, n > 0; o += n, ro += n, t += n){
+	foreach(Write*, w){
+		w = ptr;
+		for(o = c->offset; n = w->count - o, n > 0; o += n){
 			if(t == rn)
 				goto done;
 			if(n > rn - ro)
 				n = rn - ro;
-			memmove(req->ofcall.data+ro, w->data+o, n);
+			memmove(r->ofcall.data+ro, w->data+o, n);
+			ro += n; t += n;
 		}
-		o = 0;
+		c->offset = 0;
 	}
 done:
-	req->ofcall.count = t;
-	respond(req, nil);
-	
-	/* Determine the Client state */
-	if(w == s->wqueue){
-		c->offset = 0;
-		c->blocked = 1;
-		c->cursor = nil;
-		return;
-	}
-	c->offset = o;
-	c->blocked = 0;
 	c->cursor = w;
+	c->offset = o;
+	r->ofcall.count = t;
+	respond(r, nil);
 }
 
 void
-streamread(Req *req)
+streamread(Req *r)
 {
-	Client *c = req->fid->aux;
-	Stream *s = req->fid->file->aux;
-	Read *r;
-	
-	if(c->blocked){
-		r = emalloc(sizeof(Read));
-		r->req = req;
-		listlink(s->rqueue, r);
+	File *f = r->fid->file;
+	Stream *s = f->aux;
+	Client *c = r->fid->aux;
+	Read *rd;
+
+	/* Delay the response if the wqueue is empty
+	 * or if we've already caught up, respond otherwise. */
+	switch(s->parent->mode){
+	case Message:
+		if(listisempty(s->wqueue) || listislast(c->cursor))
+			break;
+		c->cursor = (Write*)c->cursor->link;
+		respondmessage(r);
+		return;
+	case Coalesce:
+		if(listisempty(s->wqueue)
+		|| (listislast(c->cursor) && c->offset == c->cursor->count))
+			break;
+		respondcoalesce(r);
 		return;
 	}
-	streamrespond(req, s->group->mode);
+	rd = emalloc(sizeof(Read));
+	rd->r = r;
+	listlink(s->rqueue, rd);
 }
 
 Write*
@@ -285,66 +288,64 @@ writealloc(long n)
 }
 
 void
-streamwrite(Req *req)
+streamwrite(Req *r)
 {
-	File *f = req->fid->file;
-	Stream *s = req->fid->file->aux;
-	Group *group = s->group;
-	Write *w, *wq, *o, *oq;
-	Read *r;
-	Client *c;
+	File *f = r->fid->file;
+	Stream *s = f->aux;
+	Group *group = s->parent;
+	Write *w, *o;
 	long n;
-	
-	wq = s->wqueue;
-	oq = group->order->wqueue;
 
-	/* Commit to queue */
-	w = writealloc(req->ifcall.count);
-	w->count = req->ifcall.count;
-	w->offset = req->ifcall.offset;
-	memmove(w->data, req->ifcall.data, w->count);
-	listlink(wq->back, w);
+	/* Commit to wqueue */
+	w = writealloc(r->ifcall.count);
+	w->count = r->ifcall.count;
+	w->offset = r->ifcall.offset;
+	memmove(w->data, r->ifcall.data, w->count);
+	listlink(s->wqueue->tail, w);
 
-	/* Commit to group order queue */
+	/* Commit to order */
 	n = strlen(f->name)+1;
 	o = writealloc(n);
 	o->offset = 0;
 	o->count = n;
 	memmove(o->data, f->name, n);
-	listlink(oq->back, o);
- 
+	listlink(group->order->wqueue->tail, o);
+
 	/* Kick the blocked stream readers */
-	listeach(Read*, s->rqueue, r){
-		c = r->req->fid->aux;
-		
+	foreach(Read*, s->rqueue){
+		Client *c = ptr->r->fid->aux;
+
 		c->cursor = w;
 		c->offset = 0;
-		c->blocked = 0;
-		streamrespond(r->req, group->mode);
-		listunlink(r);
-		free(r);
+		switch(group->mode){
+		case Message:
+			respondmessage(ptr->r); break;
+		case Coalesce:
+			respondcoalesce(ptr->r); break;
+		}
+		ptr = (Read*)ptr->tail;
+		free(listunlink(ptr->link));
 	}
 
 	/* Kick the blocked order readers */
-	listeach(Read*, group->order->rqueue, r){
-		c = r->req->fid->aux;
-		
+	foreach(Read*, group->order->rqueue){
+		Client *c = ptr->r->fid->aux;
+
 		c->cursor = o;
-		c->offset = 0;
-		c->blocked = 0;
-		streamrespond(r->req, Message);
-		listunlink(r);
-		free(r);
+		respondmessage(ptr->r);
+		ptr = (Read*)ptr->tail;
+		free(listunlink(ptr->link));
 	}
 
-	req->ofcall.count = req->ifcall.count;
-	respond(req, nil);
+	r->ofcall.count = r->ifcall.count;
+	respond(r, nil);
 }
 
 void
-ctlread(Req *req)
+ctlread(Req *r)
 {
-	Group *group = req->fid->file->aux;
+	File *f = r->fid->file;
+	Group *group = f->aux;
 	char buf[256];
 
 	char *mode2str[] = {
@@ -358,8 +359,8 @@ ctlread(Req *req)
 	};
 	snprint(buf, sizeof buf, "data %s\nreplay %s\n",
 		mode2str[group->mode], replay2str[group->replay]);
-	readstr(req, buf);
-	respond(req, nil);
+	readstr(r, buf);
+	respond(r, nil);
 }
 
 enum {
@@ -380,17 +381,18 @@ Cmdtab groupcmd[] = {
 };
 
 void
-ctlwrite(Req *req)
+ctlwrite(Req *r)
 {
-	Group *group = req->fid->file->aux;
+	File *f = r->fid->file;
+	Group *group = f->aux;
 	char *e = nil;
 	Cmdbuf *cmd;
 	Cmdtab *t;
 
-	cmd = parsecmd(req->ifcall.data, req->ifcall.count);
+	cmd = parsecmd(r->ifcall.data, r->ifcall.count);
 	t = lookupcmd(cmd, groupcmd, nelem(groupcmd));
 	if(t == nil){
-		respondcmderror(req, cmd, "%r");
+		respondcmderror(r, cmd, "%r");
 		free(cmd);
 		return;
 	}
@@ -439,93 +441,92 @@ ctlwrite(Req *req)
 		break;
 	}}
 	free(cmd);
-	respond(req, e);
+	respond(r, e);
 }
 
 void
-xcreate(Req *req)
+xcreate(Req *r)
 {
-	char *name = req->ifcall.name;
-	char *uid = req->fid->uid;
-	ulong perm = req->ifcall.perm;
-	File *group = req->fid->file;
+	char *name = r->ifcall.name;
+	char *uid = r->fid->uid;
+	ulong perm = r->ifcall.perm;
+	File *parent = r->fid->file;
 	File *f = nil;
 
-	switch(filetype(group)){
+	switch(filetype(parent)){
 	case Qroot:
 	case Qgroup:
 		if(perm&DMDIR)
-			f = groupcreate(group, name, uid, perm);
+			f = groupcreate(parent, name, uid, perm);
 		else{
-			f = streamcreate(group, name, uid, perm);
-			req->fid->file = f;
-			req->ofcall.qid = f->qid;
-			streamopen(f->aux, req);
+			f = streamcreate(parent, name, uid, perm);
+			r->fid->file = f;
+			r->ofcall.qid = f->qid;
+			streamopen(f->aux, r);
 		}
 		break;
 	}
 	if(f == nil)
-		respond(req, "internal failure");
+		respond(r, "internal failure");
 	else
-		respond(req, nil);
+		respond(r, nil);
 }
 
 void
-xopen(Req *req)
+xopen(Req *r)
 {
-	File *f = req->fid->file;
+	File *f = r->fid->file;
 
 	switch(filetype(f)){
 	case Qstream:
 	case Qorder:
-		streamopen(f->aux, req);
+		streamopen(f->aux, r);
 		break;
 	}
-	respond(req, nil);
+	respond(r, nil);
 }
 
 void
-xwrite(Req *req)
+xwrite(Req *r)
 {
-	File *f = req->fid->file;
+	File *f = r->fid->file;
 
 	switch(filetype(f)){
 	case Qstream:
-		streamwrite(req);
+		streamwrite(r);
 		break;
 	case Qctl:
-		ctlwrite(req);
+		ctlwrite(r);
 		break;
 	default:
-		respond(req, "forbidden");
+		respond(r, "forbidden");
 		return;
 	}
 }
 
 void
-xread(Req *req)
+xread(Req *r)
 {
-	File *f = req->fid->file;
+	File *f = r->fid->file;
 
 	switch(filetype(f)){
 	case Qstream:
 	case Qorder:
-		streamread(req);
+		streamread(r);
 		break;
 	case Qctl:
-		ctlread(req);
+		ctlread(r);
 		break;
 	default:
-		respond(req, "forbidden");
+		respond(r, "forbidden");
 	}
 }
 
 void
-xflush(Req *req)
+xflush(Req *r)
 {
-	Req *old = req->oldreq;
+	Req *old = r->oldreq;
 	File *f = old->fid->file;
-	Read *r;
 
 	switch(filetype(f)){
 	case Qstream:
@@ -534,26 +535,25 @@ xflush(Req *req)
 
 		if(old->ifcall.type != Tread)
 			break;
-		listeach(Read*, s->rqueue, r){
-			if(r->req == old){
-				listunlink(r);
-				free(r);
+		foreach(Read*, s->rqueue){
+			if(ptr->r == old){
+				free(listunlink(ptr));
 				break;
 			}
 		}
 		respond(old, "interrupted");
 	}}
-	respond(req, nil);
+	respond(r, nil);
 }
 
 void
-xwstat(Req *req)
+xwstat(Req *r)
 {
-	File *w, *f = req->fid->file;
-	char *uid = req->fid->uid;
+	File *w, *f = r->fid->file;
+	char *uid = r->fid->uid;
 
-	/* To change name, must have write permission in group. */
-	if(req->d.name[0] != '\0' && strcmp(req->d.name, f->name) != 0){
+	/* To change name, must have write permission in parent. */
+	if(r->d.name[0] != '\0' && strcmp(r->d.name, f->name) != 0){
 		if((w = f->parent) == nil)
 			goto perm;
 		incref(w);
@@ -561,9 +561,9 @@ xwstat(Req *req)
 			closefile(w);
 			goto perm;
 		}
-		if((w = walkfile(w, req->d.name)) != nil){
+		if((w = walkfile(w, r->d.name)) != nil){
 			closefile(w);
-			respond(req, "file already exists");
+			respond(r, "file already exists");
 			return;
 		}
 	}
@@ -571,47 +571,47 @@ xwstat(Req *req)
 	/* To change group, must be owner and member of new group,
 	 * or leader of current group and leader of new group.
 	 * Second case cannot happen, but we check anyway. */
-	while(req->d.gid[0] != '\0' && strcmp(f->gid, req->d.gid) != 0){
+	while(r->d.gid[0] != '\0' && strcmp(f->gid, r->d.gid) != 0){
 		if(strcmp(uid, f->uid) == 0)
 			break;
 		if(strcmp(uid, f->gid) == 0)
-		if(strcmp(uid, req->d.gid) == 0)
+		if(strcmp(uid, r->d.gid) == 0)
 			break;
-		respond(req, "not owner");
+		respond(r, "not owner");
 		return;
 	}
 
 	/* To change mode, must be owner or group leader.
 	 * Because of lack of users file, leader=>group itself. */
-	if(req->d.mode != ~0 && f->mode != req->d.mode){
+	if(r->d.mode != ~0 && f->mode != r->d.mode){
 		if(strcmp(uid, f->uid) != 0)
 		if(strcmp(uid, f->gid) != 0){
-			respond(req, "not owner");
+			respond(r, "not owner");
 			return;
 		}
 	}
 
-	if(req->d.name[0] != '\0'){
+	if(r->d.name[0] != '\0'){
 		free(f->name);
-		f->name = estrdup(req->d.name);
+		f->name = estrdup(r->d.name);
 	}
-	if(req->d.uid[0] != '\0'){
+	if(r->d.uid[0] != '\0'){
 		free(f->uid);
-		f->uid = estrdup(req->d.uid);
+		f->uid = estrdup(r->d.uid);
 	}
-	if(req->d.gid[0] != '\0'){
+	if(r->d.gid[0] != '\0'){
 		free(f->gid);
-		f->gid = estrdup(req->d.gid);
+		f->gid = estrdup(r->d.gid);
 	}
-	if(req->d.mode != ~0){
-		f->mode = req->d.mode;
+	if(r->d.mode != ~0){
+		f->mode = r->d.mode;
 		f->qid.type = f->mode >> 24;
 	}
 
-	respond(req, nil);
+	respond(r, nil);
 	return;
 perm:
-	respond(req, "permission denied");
+	respond(r, "permission denied");
 }
 
 void
@@ -627,7 +627,7 @@ xdestroyfile(File *f)
 {
 	switch(filetype(f)){
 	case Qgroup:
-		groupclose(f->aux);
+		groupclose(f);
 		break;
 	case Qstream:
 		streamclose(f->aux);

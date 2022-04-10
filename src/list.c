@@ -4,33 +4,56 @@
 #include "list.h"
 #include "util.h"
 
-Listelem*
-listinit(Listelem *l)
+List*
+listalloc(void)
 {
-	l->front = l->back = l;
-	return l;
-}
+	List *n;
 
-Listelem*
-listlink(Listelem *list, Listelem *n)
-{
-	n->front = list->front;
-	n->back = list;
-	((Listelem*)list->front)->back = n;
-	list->front = n;
+	n = emalloc(sizeof(List));
+	n->tag = Listlead;
+	n->link = n;
+	n->tail = n;
 	return n;
 }
 
-Listelem*
-listunlink(Listelem *n)
+List*
+listlink(List *p, List *n)
 {
-	((Listelem*)n->front)->back = n->back;
-	((Listelem*)n->back)->front = n->front;
+	n->link = p->link;
+	p->link = n;
+	n->tail = p;
+	n->link->tail = n;
 	return n;
+}
+
+List*
+listunlink(List *p)
+{
+	p->link->tail = p->tail;
+	p->tail->link = p->link;
+	return p;
 }
 
 int
-listisempty(Listelem *list)
+listisempty(List *p)
 {
-	return list->front == list;
+	return p->link == p;
+}
+
+int
+listislead(List *p)
+{
+	return p->tag == Listlead;
+}
+
+int
+listisfirst(List *p)
+{
+	return p->tail->tag == Listlead;
+}
+
+int
+listislast(List *p)
+{
+	return p->link->tag == Listlead;
 }
